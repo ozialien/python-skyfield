@@ -1,3 +1,5 @@
+jplephem>=2.3
+sgp4>=1.4
 astropy
 numpy
 sphinx
