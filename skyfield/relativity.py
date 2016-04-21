@@ -20,14 +20,14 @@ rmasses = {
     'moon': 27068700.387534,
     }
 
-def add_deflection(position, observer, ephemeris, jd_tdb,
+def add_deflection(position, observer, ephemeris, t,
                    include_earth_deflection, count=3):
     """Update `position` for how solar system masses will deflect its light.
 
-    Given the ICRS `position` [x,y,z] of an object (AU) that is being
+    Given the ICRS `position` [x,y,z] of an object (au) that is being
     viewed from the `observer` also expressed as [x,y,z], and given an
     ephemeris that can be used to determine solar system body positions,
-    and given the time `jd` and Boolean `apply_earth` indicating whether
+    and given the time `t` and Boolean `apply_earth` indicating whether
     to worry about the effect of Earth's mass, and a `count` of how many
     major solar system bodies to worry about, this function updates
     `position` in-place to show how the masses in the solar system will
@@ -40,11 +40,17 @@ def add_deflection(position, observer, ephemeris, jd_tdb,
 
     # Cycle through gravitating bodies.
 
+    jd_tdb = t.tdb
+    ts = t.ts
     for name in deflectors[:count]:
+        try:
+            deflector = ephemeris[name]
+        except KeyError:
+            deflector = ephemeris[name + ' barycenter']
 
-        # Get position of gravitating body wrt ss barycenter at time 'jd_tdb'.
+        # Get position of gravitating body wrt ss barycenter at time 't_tdb'.
 
-        bposition = ephemeris._position(name, jd_tdb)
+        bposition = deflector.at(ts.tdb(jd=jd_tdb)).position.au  # TODO
 
         # Get position of gravitating body wrt observer at time 'jd_tdb'.
 
@@ -69,14 +75,14 @@ def add_deflection(position, observer, ephemeris, jd_tdb,
         # if tlt < dlt:
         #     tclose = jd - tlt
 
-        bposition = ephemeris._position(name, tclose)
+        bposition = deflector.at(ts.tdb(jd=tclose)).position.au  # TODO
         rmass = rmasses[name]
         _add_deflection(position, observer, bposition, rmass)
 
     # If observer is not at geocenter, add in deflection due to Earth.
 
     if include_earth_deflection.any():
-        bposition = ephemeris._position('earth', tclose)
+        bposition = deflector.at(ts.tdb(jd=tclose)).position.au  # TODO
         rmass = rmasses['earth']
         _add_deflection(position, observer, bposition, rmass)
 
@@ -151,17 +157,17 @@ def _add_deflection(position, observer, deflector, rmass):
 
 #
 
-def add_aberration(position, velocity, lighttime):
+def add_aberration(position, velocity, light_time):
     """Correct a relative position vector for aberration of light.
 
     Given the relative `position` [x,y,z] of an object (AU) from a
     particular observer, the `velocity` [dx,dy,dz] at which the observer
-    is traveling (AU/day), and the light propagation delay `lighttime`
+    is traveling (AU/day), and the light propagation delay `light_time`
     to the object (days), this function updates `position` in-place to
     give the object's apparent position due to the aberration of light.
 
     """
-    p1mag = lighttime * C_AUDAY
+    p1mag = light_time * C_AUDAY
     vemag = length_of(velocity)
     beta = vemag / C_AUDAY
     dot = dots(position, velocity)
@@ -169,7 +175,7 @@ def add_aberration(position, velocity, lighttime):
     cosd = dot / (p1mag * vemag)
     gammai = sqrt(1.0 - beta * beta)
     p = beta * cosd
-    q = (1.0 + p / (1.0 + gammai)) * lighttime
+    q = (1.0 + p / (1.0 + gammai)) * light_time
     r = 1.0 + p
 
     position *= gammai

@@ -7,9 +7,9 @@
 
 Skyfield is careful to distinguish the *position* of an object
 from the several choices of *coordinate*
-that can be used to designate that position with numbers.
+that you can use to designate that position with numbers.
 There are only three basic kinds of position that Skyfield recognizes,
-but several different ways in which a position
+but several different ways in which each position
 can be turned into coordinates.
 
 Here is a quick reference to the three basic kinds of position,
@@ -19,27 +19,32 @@ together with all of the attributes and methods that they support:
 
     Three positions
 
-    obj(time)           →  Barycentric position (BCRS)
+    obj.at(time)        →  Barycentric position (BCRS)
      └─ observe(obj2)   →  Astrometric position (ΔBCRS)
          └─ apparent()  →  Apparent position (GCRS)
 
     Barycentric, Astrometric, or Apparent position
      │
-     ├── `position <api.html#Position.position>`_.au         →   x, y, z
-     ├── `position <api.html#Position.position>`_.km         →   x, y, z
+     ├── `position <api.html#skyfield.positionlib.ICRF.position>`_.au         →   x, y, z
+     ├── `position <api.html#skyfield.positionlib.ICRF.position>`_.km         →   x, y, z
      ├── `position.to(unit) <api.html#Distance.to>`_   →   x, y, z
      │
-     ├── `velocity <api.html#Position.velocity>`_.au_per_d   →   xdot, ydot, zdot
-     ├── `velocity <api.html#Position.velocity>`_.km_per_s   →   xdot, ydot, zdot
+     ├── `velocity <api.html#skyfield.positionlib.ICRF.velocity>`_.au_per_d   →   xdot, ydot, zdot
+     ├── `velocity <api.html#skyfield.positionlib.ICRF.velocity>`_.km_per_s   →   xdot, ydot, zdot
      ├── `velocity.to(unit) <api.html#Distance.to>`_   →   xdot, ydot, zdot
      │
-     ├── `radec(epoch=jd) <api.html#Position.radec>`_     →   ra, dec, distance
-     ├── `radec() <api.html#Position.radec>`_             →   ra, dec, distance
-     └── `distance() <api.html#Position.distance>`_          →   distance
+     ├── `radec(epoch=t) <api.html#skyfield.positionlib.ICRF.radec>`_      →   ra, dec, distance
+     ├── `radec() <api.html#skyfield.positionlib.ICRF.radec>`_             →   ra, dec, distance
+     ├── `distance() <api.html#skyfield.positionlib.ICRF.distance>`_          →   distance
+     │
+     ├── `ecliptic_position() <api.html#skyfield.positionlib.ICRF.ecliptic_position>`_ →   x, y, z
+     ├── `ecliptic_latlon() <api.html#skyfield.positionlib.ICRF.ecliptic_latlon>`_   →   lat, lon, distance
+     ├── `galactic_position() <api.html#skyfield.positionlib.ICRF.galactic_position>`_ →   x, y, z
+     └── `galactic_latlon() <api.html#skyfield.positionlib.ICRF.galactic_latlon>`_   →   lat, lon, distance
 
     Apparent position only
      │
-     └── `altaz(…) <api.html#Position.altaz>`_            →   alt, az, distance
+     └── `altaz(…) <api.html#skyfield.positionlib.Apparent.altaz>`_            →   alt, az, distance
 
     Angle like ra, dec, alt, and az
      │
@@ -56,23 +61,28 @@ together with all of the attributes and methods that they support:
      ├── `dstr(places=3) <api.html#Angle.dstr>`_      →   '359deg 01\' 01.358"'
      └── `signed_dms() <api.html#Angle.dms>`_        →   (1.0, 359.0, 1.0, 1.0)
 
-The rest of this page is simply designed to explain
+The rest of this page is designed to explain
 all of the features outlined in the quick reference above.
 All hyperlinked attributes and method names,
 both in the text above and in the explanations below,
 lead to the low-level :doc:`api`
 which explains each option in even greater detail.
 
-Generating positions
-====================
+Quick reference to generating positions
+=======================================
 
-Skyfield already supports two kinds of object
-that can compute their position,
-and will soon be supporting more.
-Each object is a simple Python callable
-that can take either a :doc:`Julian date <time>`
-or a :ref:`whole Julian date array <date-arrays>`
-as its argument and return a corresponding number of positions.
+Skyfield already supports three kinds of object
+that can compute their position.
+Each object offers an ``at()`` method
+whose argument can be a :doc:`Time <time>` object
+that either holds a single time
+or a whole array of different time values.
+Objects respond by returning either a single scalar position
+or else by generating a whole series of positions.
+
+.. testsetup::
+
+   __import__('skyfield.tests.fixes').tests.fixes.setup()
 
 **The planets**
   The eight planets and Pluto are all supported,
@@ -82,50 +92,64 @@ as its argument and return a corresponding number of positions.
 
   .. testcode::
 
-    from skyfield.api import now, earth, mars
+    from skyfield.api import load
 
-    jd = now()
+    ts = load.timescale()
+    t = ts.now()
+
+    planets = load('de421.bsp')
+    earth = planets['earth']
+    mars = planets['mars']
+
+    # From the center of the Solar System (Barycentric)
+
+    barycentric = mars.at(t)
+
+    # From the center of the Earth (Geocentric)
+
+    astrometric = earth.at(t).observe(mars)
+    apparent = earth.at(t).observe(mars).apparent()
+
+    # From a place on Earth (Topocentric)
+
     boston = earth.topos('42.3583 N', '71.0603 W')
-
-    # Geocentric
-
-    barycentric = mars(jd)
-    astrometric = earth(jd).observe(mars)
-    apparent = earth(jd).observe(mars).apparent()
-
-    # Topocentric
-
-    astrometric = boston(jd).observe(mars)
-    apparent = boston(jd).observe(mars).apparent()
+    astrometric = boston.at(t).observe(mars)
+    apparent = boston.at(t).observe(mars).apparent()
 
 **The stars**
   Stars and other fixed objects with catalog coordinates
-  generate their current astrometric position
+  are able to generate their current astrometric position
   when observed from a planet. :doc:`Read more <stars>`
 
-  .. testcode::
+  .. TODO - turn the following back into test code
 
-    from skyfield.api import now, earth, Star
+  ::
 
-    jd = now()
+    from skyfield.api import Star, load
+
+    ts = load.timescale()
+    t = ts.now()
+
     boston = earth.topos('42.3583 N', '71.0603 W')
     barnard = Star(ra_hours=(17, 57, 48.49803),
                    dec_degrees=(4, 41, 36.2072))
 
-    # Geocentric
+    # From the center of the Earth (Geocentric)
 
-    astrometric = earth(jd).observe(barnard)
-    apparent = earth(jd).observe(barnard).apparent()
+    astrometric = earth(t).observe(barnard)
+    apparent = earth(t).observe(barnard).apparent()
 
-    # Topocentric
+    # From a place on Earth (Topocentric)
 
-    astrometric = boston(jd).observe(barnard)
-    apparent = boston(jd).observe(barnard).apparent()
+    astrometric = boston(t).observe(barnard)
+    apparent = boston(t).observe(barnard).apparent()
 
 **Earth satellites**
   Earth satellite positions can be generated
   from public TLE elements describing their current orbit,
   which you can download from Celestrak. :doc:`Read more <earth-satellites>`
+
+  .. TODO - update the following code with new approach
 
   .. testsetup::
 
@@ -137,19 +161,21 @@ as its argument and return a corresponding number of positions.
 
   .. testcode::
 
-    from skyfield.api import now, earth
+    from skyfield.api import load
 
-    jd = now()
+    ts = load.timescale()
+    t = ts.now()
+
     boston = earth.topos('42.3583 N', '71.0603 W')
-    satellite = earth.satellite(tle_text)
+    #satellite = earth.satellite(tle_text) # TODO
 
     # Geocentric
 
-    apparent = satellite.gcrs(jd)
+    #apparent = satellite.gcrs(t)
 
     # Topocentric
 
-    apparent = boston.gcrs(jd).observe(satellite)
+    #apparent = boston.gcrs(t).observe(satellite)
 
 Read :doc:`time` for more information
 about how to build dates and pass them to planets and satellites
@@ -172,47 +198,77 @@ that is a high-precision replacement
 for the old J2000.0 system
 that was popular at the end of the 20th century.
 
-An ICRS coordinate centered on the solar system barycenter
-is called a *Barycentric Celestial Reference System* (BCRS) coordinate.
+The ICRS is one of three related concepts
+that you will often see mentioned together
+in technical publications:
 
-You can view these coordinates
-by asking Skyfield for their :attr:`~Position.position` attribute:
+* | *Barycentric Celestial Reference System* (BCRS) —
+    a coordinate origin whose relativistic frame of reference
+    is the one that was carefully defined in IAU 2000 Resolution B1.3
+    which puts the coordinate origin
+    at the gravitational center of the Solar System.
+    The direction in which the coordinate axes might point
+    is left unspecified.
+
+* *International Celestial Reference Frame* (ICRF) —
+  a precision reference frame
+  that radio astronomers have helped us define,
+  that will become forever more exact
+  as we measure better and better positions
+  for a list of very distant radio sources.
+  Wherever the origin of your coordinate system might lie,
+  you can use the ICRF to define
+  where your *x*-axis, *y*-axis, and *z*-axis should point.
+
+* *International Celestial Reference System* (ICRS) —
+  A coordinate system whose origin is defined by the BCRS
+  and whose axis directions are defined by the ICRF.
+  In essence, the ICRS = ICRF + BCRS.
+
+Instead of using an acronym,
+Skyfield uses the class name :class:`Barycentric`
+for coordinates expressed in the ICRS.
+You can view the raw *x*, *y*, and *z* coordinates
+by asking Skyfield for their :attr:`~Barycentric.position` attribute:
 
 .. testcode::
 
-    # BCRS positions of Earth and Jupiter
+    # BCRS positions of Earth and Venus
 
-    from skyfield.api import earth, jupiter
+    from skyfield.api import load
 
-    print(earth(utc=(1980, 1, 1)).position.au)
-    print(jupiter(utc=(1980, 1, 1)).position.au)
+    planets = load('de421.bsp')
+    earth = planets['earth']
+    mars = planets['mars']
+
+    t = ts.utc(1980, 1, 1)
+    print(earth.at(t).position.au)
+    print(mars.at(t).position.au)
 
 .. testoutput::
 
     [-0.16287311  0.88787399  0.38473904]
-    [-4.71061475  2.32932129  1.11328106]
+    [-1.09202418  1.10723168  0.53739021]
 
 The coordinates shown above are measured
 using the Astronomical Unit (au),
 which is the average distance from the Earth to the Sun.
-So the value ``-4.71`` indicates a distance
-nearly five times farther from the Sun than that of the Earth.
 You can, if you want, ask for these coordinates
 in kilometers with the :attr:`~Position.km` attribute.
 And if you have the third-party AstroPy package installed,
 then you can convert these coordinates
-into any length unit with the :meth:`~Position.to()` method.
+into any length unit with the :meth:`~Position.to` method.
 
 Astrometric position
 ====================
 
 You might think that you could determine
-the position of Jupiter in the night sky of Earth
+the position of Mars in the night sky of Earth
 by simply subtracting these two positions
 to generate the vector difference between them.
 But that would ignore the fact that light takes several minutes
-to travel between Jupiter and the Earth.
-The image of Jupiter in our sky
+to travel between Mars and the Earth.
+The image of Mars in our sky
 does not show us where it *is*, right now,
 but where it *was* — several minutes ago —
 when the light now reaching our eyes or instruments
@@ -221,11 +277,11 @@ actually left its surface.
 Correcting for the light-travel time
 does not simply fix a minor inconvenience,
 but reflects a very deep physical reality.
-Not only the light from Jupiter,
+Not only the light from Mars,
 but *all* of its physical effects,
 arrive no faster than the speed of light.
-As Jupiter tugs us with its gravity,
-we do not get pulled in the direction of the “real” Jupiter —
+As Mars tugs at the Earth with its gravity,
+we do not get pulled in the direction of the “real” Mars —
 we get tugged in the direction of its time-delayed image
 hanging in the sky above us!
 
@@ -236,14 +292,14 @@ that we see in our sky:
 
 .. testcode::
 
-    # Observing Jupiter from the Earth's position
+    # Observing Mars from the Earth's position
 
-    astrometric = earth(utc=(1980, 1, 1)).observe(jupiter)
+    astrometric = earth.at(ts.utc(1980, 1, 1)).observe(mars)
     print(astrometric.position.au)
 
 .. testoutput::
 
-    [-4.54763822  1.44160883  0.72860876]
+    [-0.92909581  0.21939949  0.15266885]
 
 This light-delayed position is called the *astrometric* position,
 and is traditionally mapped on a star chart
@@ -263,9 +319,9 @@ and :meth:`~Angle.dstr()` methods:
 
 .. testoutput::
 
-    10h 49m 38.71s
-    +08deg 41' 00.6"
-    4.82598 au
+    11h 06m 51.22s
+    +09deg 05' 09.2"
+    0.96678 au
 
 As we will explore in the next section,
 objects never appear at exactly the position in the sky
@@ -273,7 +329,7 @@ predicted by the simple and ideal astrometric position.
 But it is useful for mapping the planet
 against the background of stars in a
 `printed star atlas <http://www.amazon.com/s/?_encoding=UTF8&camp=1789&creative=390957&linkCode=ur2&pageMinusResults=1&suo=1389754954253&tag=letsdisthemat-20&url=search-alias%3Daps#/ref=nb_sb_noss_1?url=search-alias%3Daps&field-keywords=star%20atlas&sprefix=star+%2Caps&rh=i%3Aaps%2Ck%3Astar%20atlas&sepatfbtf=true&tc=1389754955568>`_,
-because star atlases also use astrometric positions.
+because star atlases use astrometric positions.
 
 .. _apparent:
 
@@ -302,7 +358,7 @@ two further effects must be taken into account:
   appears to be slanting towards you
   because of your own motion.
   The effect is small enough — at most about 20 arcseconds —
-  that it was not both observed and explained until 1728,
+  that only in 1728 was it finally observed and explained,
   when James Bradley realized that it provided the long-awaited proof
   that the Earth is indeed in motion in an orbit around the Sun.
 
@@ -326,14 +382,14 @@ is typically expressed as the angles
 
 .. testoutput::
 
-    10h 49m 39.34s
-    +08deg 40' 56.4"
-    4.82598 au
+    11h 06m 51.75s
+    +09deg 05' 04.7"
+    0.96678 au
 
 But it is actually unusual to print apparent coordinates
-in a permanent unchanging reference frame like the ICRS,
+in a permanent unchanging reference frame like the ICRF,
 so you are unlikely to find the two values above
-if you look up the position of Jupiter on 1980 January 1
+if you look up the position of Mars on 1980 January 1
 in an almanac or by using other astronomy software.
 
 Instead, apparent positions are usually expressed
@@ -342,13 +398,13 @@ as its rolls and tumbles through space —
 which, after all,
 is how right ascension and declination were defined
 through most of human history,
-before the invention of the ICRS axes.
+before the invention of the ICRF axes.
 The Earth’s equator and poles move at least slightly every day,
-and move by very large amounts as years add up to centuries.
+and move by larger amounts as years add up to centuries.
 
 To ask for right ascension and declination
 relative to the real equator and poles of Earth,
-and not the ideal permanent axes of the ICRS,
+and not the ideal permanent axes of the ICRF,
 simply add the keyword argument ``epoch='date'``
 when you ask the apparent position for coordinates:
 
@@ -364,9 +420,9 @@ when you ask the apparent position for coordinates:
 
 .. testoutput::
 
-    10h 48m 36.02s
-    +08deg 47' 18.6"
-    4.82598 au
+    11h 05m 48.68s
+    +09deg 11' 35.7"
+    0.96678 au
 
 These are the coordinates
 that should match other astronomy software
@@ -379,17 +435,18 @@ Azimuth and altitude
 ====================
 
 The final result that many users seek
-is the *altitude* and *azimuth* of an object
-relative to their own location on the Earth’s surface.
+is the altitude and azimuth of an object
+above their own local horizon.
 
-The altitude measures the angle above or below the horizon,
-with a positive number of degrees meaning “above”
-and a negative number indicating that the object
-is below the horizon (and impossible to view).
-Azimuth measures the angle around the sky from the north pole,
-so 0° means that the object is straight north,
-90° indicates that the object lies to the east,
-180° means south, and 270° means that the object is straight west.
+* *Altitude* measures the angle above or below the horizon,
+  with a positive number of degrees meaning “above”
+  and a negative number indicating that the object
+  is below the horizon (and impossible to view).
+
+* *Azimuth* measures the angle around the sky from the north pole,
+  so 0° means that the object is straight north,
+  90° indicates that the object lies to the east,
+  180° means south, and 270° means that the object is straight west.
 
 Altitude and azimuth are computed
 by calling the :meth:`~Apparent.altaz()` method on an apparent position.
@@ -421,7 +478,7 @@ of an Earth object:
     # specific geographic location
 
     boston = earth.topos('42.3583 N', '71.0603 W')
-    astro = boston(utc=(1980, 3, 1)).observe(jupiter)
+    astro = boston.at(ts.utc(1980, 3, 1)).observe(mars)
     app = astro.apparent()
 
     alt, az, distance = app.altaz()
@@ -431,11 +488,11 @@ of an Earth object:
 
 .. testoutput::
 
-    23deg 00' 25.5"
-    96deg 03' 03.2"
-    4.40689 au
+    24deg 30' 27.2"
+    93deg 04' 29.5"
+    0.678874 au
 
-So Jupiter was more than 23° above the horizon for Bostonians
+So Mars was more than 24° above the horizon for Bostonians
 on 1980 March 1 at midnight UTC.
 
 The altitude returned from a plain :meth:`~Apparent.altaz()` call
@@ -454,7 +511,7 @@ If you know the weather conditions, you can specify them.
 
 .. testoutput::
 
-    23deg 02' 41.6"
+    24deg 32' 34.1"
 
 Or you can ask Skyfield to use a standard temperature and pressure
 when generating its rough simulation of the effects of refraction.
@@ -466,7 +523,7 @@ when generating its rough simulation of the effects of refraction.
 
 .. testoutput::
 
-    23deg 02' 44.7"
+    24deg 32' 37.0"
 
 Keep in mind that these are simply guesses.
 The effects of the atmosphere,
@@ -474,3 +531,7 @@ with its many layers of heat and cold and wind and weather,
 cannot be accurately modeled or predicted.
 And note that refraction is only applied to objects above the horizon.
 Objects below −1.0° altitude are not adjusted for refraction.
+
+.. testcleanup::
+
+   __import__('skyfield.tests.fixes').tests.fixes.teardown()

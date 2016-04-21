@@ -1,12 +1,14 @@
 # Config file for automatic testing at travis-ci.org
 
 language: python
+sudo: false
 
 python:
   - "2.6"
   - "2.7"
   - "3.3"
   - "3.4"
+  - "3.5"
 
 install:
   - "./requirements.sh"
@@ -16,4 +18,4 @@ install:
 script:
   - "pip install unittest2"
   - "assay --batch skyfield.tests"
-  - "cd skyfield/documentation && make doctest"
+  - "make -C skyfield/documentation doctest"

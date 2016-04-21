@@ -159,8 +159,15 @@ dry-run:
 	rsync --dry-run -crlv _build/html/ ~/Dropbox/rhodesmill.org/skyfield
 
 sync:
-	rsync -crlv _build/html/ ~/Dropbox/rhodesmill.org/skyfield
+	rsync -crlv _build/html/ wf-rhodesmill:~/Dropbox/rhodesmill.org/skyfield
 
+# Runs web server outside _build, for when I need to "rm -r" clean-slate it:
 serve:
-	python -m webbrowser -t http://localhost:8123/_build/html/ && \
-	python -m SimpleHTTPServer 8123
+	python -m webbrowser -t http://localhost:8123/_build/html && \
+	python -m SimpleHTTPServer 8123 || python -m http.server 8123
+
+loop:
+	make html
+	while inotifywait -e CLOSE_WRITE -e DELETE_SELF *.rst ../*.py ; \
+	do make html; \
+	done

@@ -7,11 +7,89 @@ are appropriate for sprints and collaboration, and longer-term goals
 that the code base is not quite ready for yet but that we do not want to
 forget.
 
+Sprint Possibilities
+====================
+
+* Why require the intermediate step of creating a ``Body`` before the
+  user can ask for a ``Geometry``?  The intermediate step should be
+  avoided and instead of having to say::
+
+    kernel['earth'].geometry_to('mars')
+
+  users should be able to say::
+
+    kernel.geometry_between('earth', 'mars')
+
+  We could even deprecate ``geometry_to()`` once this is in place.  Or
+  would that be worth it?  Or is this even a good idea, and we should
+  just leave what we have in place?
+
+* If we are going to allow times like TT to be submitted using
+  calendar dates, then we should probably provide methods that would
+  fetch them back as calendar dates.
+
+* After running a line like:
+
+    dates = Time(utc=(1980, 1, range(1000)))
+
+  displaying ``dates`` on the screen shows way too much output.  The
+  ``repr()`` should be re-crafted so that the length of the array is
+  stated, but the actual entries excerpted so that only the first few
+  and the last few are shown.  Maybe the ``repr()`` should use calendar
+  dates too instead of just showing the JD numbers?
+
+* We should rename ``ecliptic_position()`` to ``ecliptic_xyz()``.
+
 * Make JD give a sensible error if the first argument is a number or
   something.
 
-Sprint Possibilities
-====================
+* Load and use the various offsets between UTC and TAI that were in
+  effect before 1972.
+
+* When I wrote `add_deflection()` and needed to know whether Jupiter
+  itself is available in an ephemeris, or whether the Jupiter Barycenter
+  should be used in its place, I tried writing the test `if name not in
+  ephemeris:`.  But this sent the code into an infinite loop!  Why does
+  `in` not work on an ephemeris object?  This should be fixed, and a
+  test written to keep it fixed.
+
+* The deflection code should really use integer identifiers instead of
+  using names, which are slower because they need decoding.
+
+* The deflection code should have a quick way to reach in and ask an
+  ephemeris for a raw position in au, without having to spin up a body
+  object and have it spin up a `Distance` object.
+
+* A `Body` should go ahead and try building its segment list at the
+  moment it is created, instead of doing it over again every time its
+  `at()` method is called.
+
+* We currently download most SPICE kernels from NAIF, but have to use
+  FTP for fetching DE422.  Are the files from the two sites equivalent
+  and do they have the same data?  Should we prefer one or the other?
+
+* We should have an illustration of Earth satellite heights above the
+  surface, plotted against a blue atmosphere fading out into the black
+  of space as the plot goes upwards towards the top.
+
+* Ephemeris objects should have more interesting repr's, that maybe give
+  the name of the ephemeris.  And maybe the objects inside?  Maybe the
+  start and end date?
+
+* Iterating across an ephemeris should probably give you object names.
+
+* The repr() of a Body object should name the body and the filename of
+  the ephemeris it is pulled from.
+
+* See about switching ``requirements.sh`` to be a conda environment
+  file.
+
+* Update the earth satellite IPython Notebook to the new API, or remove
+  it in favor of keeping notebooks in the separate astronomy notebook
+  repository.
+
+
+
 
 * In `stars.rst`, document the other alternatives for how to set the RA
   and dec of a new Star object.

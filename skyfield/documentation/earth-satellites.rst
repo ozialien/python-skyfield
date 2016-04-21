@@ -31,13 +31,16 @@ to compute its apparent position relative to a location on Earth:
     2 25544  51.6498 109.4756 0003572  55.9686 274.8005 15.49815350868473
     """
 
-    from skyfield.api import JulianDate, earth
+    from skyfield.api import load
+    ts = load.timescale()
+    eph = load('de421.bsp')
+    earth = eph['earth']
 
     bluffton = earth.topos('40.8939 N', '83.8917 W')
-    tup = (2014, 1, 21, 11, 18, 7)
+    t = ts.utc(2014, 1, 21, 11, 18, 7)
 
     sat = earth.satellite(text)
-    position = bluffton(utc=tup).observe(sat)
+    position = bluffton.at(t).observe(sat)
 
 To find out whether the satellite is above your local horizon,
 you will want to ask for its altitude and azimuth.
@@ -54,9 +57,9 @@ while positive altitude places the satellite above the horizon:
 
 .. testoutput::
 
-    13deg 49' 57.8"
-    357deg 51' 21.8"
-    1281.20477925
+    13deg 50' 46.6"
+    358deg 48' 55.9"
+    1280.53654286
 
 You can also ask for the position
 to be expressed as right ascension and declination
@@ -75,8 +78,8 @@ See :doc:`positions` to learn more about these possibilities:
 
 .. testoutput::
 
-    02h 03m 52.69s
-    +62deg 48' 26.3"
+    01h 54m 36.45s
+    +62deg 51' 50.6"
 
 .. testcode::
 
@@ -87,8 +90,8 @@ See :doc:`positions` to learn more about these possibilities:
 
 .. testoutput::
 
-    02h 04m 56.65s
-    +62deg 52' 27.1"
+    01h 55m 39.18s
+    +62deg 55' 57.4"
 
 The standard SGP4 theory of satellite motion that Skyfield uses
 is a rough enough model of the near-Earth environment
@@ -103,7 +106,7 @@ Propagation Errors
 After building a satellite object,
 you can examine the *epoch* date and time
 when the TLE element set’s predictions are most accurate.
-The ``epoch`` attribute is a :class:`JulianDate`,
+The ``epoch`` attribute is a :class:`Time`,
 so it supports all of the standard Skyfield date methods:
 
 .. testcode::
@@ -118,7 +121,7 @@ so it supports all of the standard Skyfield date methods:
 
 .. testoutput::
 
-    A.D. 2013-Nov-09 23:03:03.9479 UT
+    A.D. 2013-Nov-10 23:03:03.9479 UT
 
 Skyfield is willing to generate positions
 for dates quite far from a satellite’s epoch,
@@ -149,12 +152,12 @@ that are limiting this TLE set’s predictions:
 
 .. testcode::
 
-    geocentric = sat.gcrs(utc=(2013, 11, 9))
+    geocentric = sat.gcrs(ts.utc(2013, 11, 9))
     print('Before:')
     print(geocentric.position.km)
     print(geocentric.sgp4_error)
 
-    geocentric = sat.gcrs(utc=(2013, 11, 13))
+    geocentric = sat.gcrs(ts.utc(2013, 11, 13))
     print('\nAfter:')
     print(geocentric.position.km)
     print(geocentric.sgp4_error)
@@ -169,7 +172,7 @@ that are limiting this TLE set’s predictions:
     [ nan  nan  nan]
     mrt 0.997178 is less than 1.0 indicating the satellite has decayed
 
-If you use a Julian date array to ask about an entire range of dates,
+If you use a ``Time`` array to ask about an entire range of dates,
 then ``sgp4_error`` will be a sequence filled in with ``None``
 whenever the SGP4 propagator was successful
 and otherwise recording the propagator error:
@@ -178,7 +181,7 @@ and otherwise recording the propagator error:
 
     from pprint import pprint
 
-    geocentric = sat.gcrs(utc=(2013, 11, [9, 10, 11, 12, 13]))
+    geocentric = sat.gcrs(ts.utc(2013, 11, [9, 10, 11, 12, 13]))
     pprint(geocentric.sgp4_error)
 
 .. testoutput::

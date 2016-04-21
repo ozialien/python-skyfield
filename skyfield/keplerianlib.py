@@ -83,7 +83,7 @@ class KeplerianOrbit:
         self.mean_anomaly = mean_anomaly
         self.epoch = epoch
 
-    def getECLCoordinatesOnJulianDate(self, date):
+    def getECLCoordinatesAtTime(self, date):
          # localize the orbital parameters
         a = self.semimajor_axis
         e = self.eccentricity
@@ -131,14 +131,14 @@ class KeplerianOrbit:
 
         return ICRCoordinates(x_ecl, y_ecl, z_ecl)
 
-    def getICRSCoordinatesOnJulianDate(self, date):
+    def getICRSCoordinatesAtTime(self, date):
         # J2000 obliquity
         e = 23.43928 * math.pi / 180.0
 
         # get the ecliptic coords
-        ecliptic = self.getECLCoordinatesonJulianDate(date);
+        ecliptic = self.getECLCoordinatesonTime(date);
 
-        # calculate the equatorial (ICRS) coordinates
+        # calculate the equatorial (ICRF) coordinates
         x_eq = ecliptic.x;
         y_eq = cos(e) * ecliptic.y - sin(e) * ecliptic.z
         z_eq = sin(e) * ecliptic.y + cos(e) * ecliptic.z

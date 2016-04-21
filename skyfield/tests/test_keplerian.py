@@ -1,9 +1,9 @@
 """Compare the output of Skyfield with the routines from NOVAS for keplerian orbiting bodies"""
 
 import skyfield.keplerianlib
+from skyfield import api
 from skyfield.keplerianlib import KeplerianOrbit, ICRCoordinates
 
-from ..timelib import JulianDate, julian_date
 
 DISTANCE_EPSILON = 0.026
 
@@ -26,20 +26,21 @@ def test_convergeEccentricAnomaly():
     assert test == hoyle_8077['eccentric_anomaly']
 
 def test_instantiate_8077_hoyle():
+    ts = api.load.timescale()
     hoyle = KeplerianOrbit( hoyle_8077['semimajor_axis'],
                             hoyle_8077['eccentricity'],
                             hoyle_8077['inclination'],
                             hoyle_8077['longitude_ascending'],
                             hoyle_8077['argument_perihelion'],
                             hoyle_8077['mean_anomaly'],
-                            hoyle_8077['epoch'])
+                            ts.tt(jd=hoyle_8077['epoch_tt']))
 
-    assert hoyle != None
+    assert hoyle is not None
 
 def test_instantiate_coordinates():
     coords = ICRCoordinates(x=500.25, y=10.76, z=0.1125)
 
-    assert coords != None
+    assert coords is not None
 
 def test_coordinatesEquivalence():
     coords_the_first = ICRCoordinates(x=500.25, y=10.76, z=0.1125)
@@ -78,23 +79,24 @@ hoyle_8077 = {
     'argument_perihelion' : 34.46503170092878,
     'mean_anomaly' : 330.9918926661418,
     'eccentric_anomaly' : 4.0942988262501965,
-    'epoch' : JulianDate(tt=(2007, 5, 14)),
+    'epoch_tt' : (2007, 5, 14),
 }
 
 
 def test_get_8077_hoyle_ecliptic_on_dev_sprint_day_2():
+    ts = api.load.timescale()
     hoyle = KeplerianOrbit( hoyle_8077['semimajor_axis'],
                             hoyle_8077['eccentricity'],
                             hoyle_8077['inclination'],
                             hoyle_8077['longitude_ascending'],
                             hoyle_8077['argument_perihelion'],
                             hoyle_8077['mean_anomaly'],
-                            hoyle_8077['epoch'])
+                            ts.tt(*hoyle_8077['epoch_tt']))
 
-    date = JulianDate(tt=(2013, 8, 13))
+    date = ts.tt(2013, 8, 13)
     # print date.tt
 
-    test = hoyle.getECLCoordinatesOnJulianDate(date)
+    test = hoyle.getECLCoordinatesAtTime(date)
 
     #print test
     epsilon = 2e-2

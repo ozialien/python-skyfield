@@ -6,81 +6,104 @@
 .. currentmodule:: skyfield.api
 
 Astronomers use several different numerical scales for measuring time.
-Since Skyfield often has to reference several such scales
-over the course of a single calculation,
-the :class:`JulianDate` class
+Skyfield often has to use several timescales
+even within a single computation.
+So the :class:`Time` class
 is designed to cache each new time scale
 when a calculation first demands it.
 Further demands for the same time scale
 can then be satisfied without recomputing the value again.
 
-Each time scale supported by :class:`JulianDate`
+Each time scale supported by :class:`Time`
 is described in detail in one of the sections below.
 The supported time scales are:
 
-* ``jd.utc`` — Coordinated Universal Time (“Greenwich Time”)
-* ``jd.tai`` — International Atomic Time
-* ``jd.tt`` — Terrestrial Time
-* ``jd.tdb`` — Barycentric Dynamical Time (the JPL’s “T\ :sub:`eph`”)
-* ``jd.ut1`` — Universal Time
+* ``t.utc`` — Coordinated Universal Time (“Greenwich Time”)
+* ``t.tai`` — International Atomic Time
+* ``t.tt`` — Terrestrial Time
+* ``t.tdb`` — Barycentric Dynamical Time (the JPL’s *T*\ :sub:`eph`)
+* ``t.ut1`` — Universal Time
 
-To build a Julian date object,
-simply use one of these time scales
-as a keyword argument to specify the moment you want to represent.
+To specify a time,
+first build a :class:`Timescale` object
+using Skyfield’s :meth:`load.timescale()` routine.
+This downloads several data files from international authorities —
+the United States Naval Observatory
+and the International Earth Rotation Service —
+to make sure that Skyfield has current information
+about both leap seconds and the orientation of the Earth.
+(Both topics are covered in more detail below.)
+
+Once you have a timescale object,
+which Skyfield programmers conventionally name ``ts``,
+you can use its methods to create times
+specified using any of the time scales listed above:
+
+.. testsetup::
+
+   __import__('skyfield.tests.fixes').tests.fixes.setup()
+
+   import numpy as np
+   np.set_printoptions(suppress=True)
 
 .. testcode::
 
-    from skyfield.api import JulianDate
-    JulianDate(utc=(2014, 1, 18))
+    # Building a date object
+
+    from skyfield.api import load
+    ts = load.timescale()
+    t = ts.utc(2014, 1, 18)
 
 The possibilities that will be explored in the course of this page
 are::
 
-    Parameter to the JulianDate constructor
-    │
-    ├── utc = Calendar tuple or Python `datetime` or `date`
-    ├── tai = Calendar tuple or Julian date float
-    ├── tt  = Calendar tuple or Julian date float
-    ├── tdb = Calendar tuple or Julian date float
-    └── ut1 = Calendar tuple or Julian date float
+    # Summary of the techniques for specifying the time
+    # in any of the timescales listed above.
 
-    Calendar tuple
-    │
-    ├── (year, month, day)
-    ├── (year, month, day, hour)
-    ├── (year, month, day, hour, minute)
-    └── (year, month, day, hour, minute, second)
+    ts.utc(year, month, day, hour, minute, second)
+    ts.utc(dt)      # Python datetime.datetime object
 
-There are two ways to provide a date argument
-to a Skyfield routine that needs one.
-You can either supply a :class:`JulianDate`
-that you have gone ahead and built yourself,
-or you can simply call the routine with the same keyword argument
-that you would have used to build the Julian date
-and Skyfield will construct the date internally.
-So the following two calculations for January 1st
-come out exactly the same:
+    ts.tai(year, month, day, hour, minute, second)
+    ts.tai(jd=float)
+
+    ts.tt(year, month, day, hour, minute, second)
+    ts.tt(jd=float)
+
+    ts.tdb(year, month, day, hour, minute, second)
+    ts.tdb(jd=float)
+
+    ts.ut1(year, month, day, hour, minute, second)
+    ts.ut1(jd=float)
+
+Once you have constructed a :class:`Time` object,
+you can provide it to any Skyfield routine that needs it.
 
 .. testcode::
 
-    from skyfield.api import earth
+    from skyfield.api import load
 
-    jd = JulianDate(utc=(2014, 1, 1))
-    print(earth(jd).position.au)
+    planets = load('de421.bsp')
+    earth = planets['earth']
 
-    print(earth(utc=(2014, 1, 1)).position.au)
+    # Building a date and using it with at()
+
+    ts = load.timescale()
+    t = ts.utc(2014, 1, 1)
+    print(earth.at(t).position.au)
 
 .. testoutput::
 
     [-0.17461758  0.88567056  0.38384886]
-    [-0.17461758  0.88567056  0.38384886]
 
-Be sure to build the Julian date yourself
-if you have the opportunity to use it over and over again
-in several different calculations.
-Not only will you avoid recomputing the time scales,
-but other expensive calculations will be cached on the date object
-(see the section on :ref:`date-cache` for more details).
+If you will need to use the same time value several times
+then it is best to create the object once,
+through a single method call to your timescale object,
+and then use that single time repeatedly in your calculations.
+Not only will Skyfield get to avoid having to repeatedly translate
+the same time value between the different time scales,
+but other expensive calculations that involves time
+are automatically cached on the date object.
+(See the section on :ref:`date-cache` for more details.)
 
 .. _building-dates:
 
@@ -94,26 +117,28 @@ which is the basis for all of the world’s timezones.
 
 If you are comfortable dealing directly with UTC,
 you can simply set and retrieve it manually.
-A Python tuple is the most convenient way
-to represent the year, month, and day of a calendar date:
+You can provide its constructor with just the year, month, and day,
+or be more specific and give an hour, minute, and second.
+And not only can you attach a fraction to the seconds,
+but you can also freely use fractional days, hours, and minutes.
 
 .. testcode::
 
     # Four ways to specify 2014 January 18 01:35:37.5
 
-    jd  = JulianDate(utc=(2014, 1, 18.06640625))
-    jd2 = JulianDate(utc=(2014, 1, 18, 1.59375))
-    jd3 = JulianDate(utc=(2014, 1, 18, 1, 35.625))
-    jd4 = JulianDate(utc=(2014, 1, 18, 1, 35, 37.5))
+    t1 = ts.utc(2014, 1, 18.06640625)
+    t2 = ts.utc(2014, 1, 18, 1.59375)
+    t3 = ts.utc(2014, 1, 18, 1, 35.625)
+    t4 = ts.utc(2014, 1, 18, 1, 35, 37.5)
 
-    assert jd == jd2 == jd3 == jd4
+    assert t1 == t2 == t3 == t4    # True!
 
-    # Retrieving UTC as either a tuple or string
+    # Several ways to print a time as UTC.
 
-    print(jd.utc)
-    print(jd.utc_iso())
-    print(jd.utc_jpl())
-    print(jd.utc_strftime('Date %Y-%m-%d and time %H:%M:%S'))
+    print(t1.utc)
+    print(t1.utc_iso())
+    print(t1.utc_jpl())
+    print(t1.utc_strftime('Date %Y-%m-%d and time %H:%M:%S'))
 
 .. testoutput::
 
@@ -124,35 +149,27 @@ to represent the year, month, and day of a calendar date:
 
 And by scraping together the minimal support for UTC
 that exists in the Python Standard Library,
-Skyfield is able to offer a :func:`~skyfield.api.now()` function
+Skyfield is able to offer a :func:`~skyfield.timelib.Timescale.now()` function
 that reads your system clock
 and returns the current time as a Julian date object
 (assuming that your operating system clock is correct
 and configured with the correct time zone):
 
-.. testsetup::
-
-    import numpy as np
-    np.set_printoptions(suppress=True)
-
-    from skyfield import api
-    def now():
-        """Return a constant "now"."""
-        return api.JulianDate(utc=(2014, 1, 18, 23, 10, 9))
-    api.now = now
-
 .. testcode::
 
-    from skyfield.api import now
+    from skyfield.api import load
 
-    jd = now()
-    print(jd.utc_jpl())
+    # Asking the current date and time
+
+    ts = load.timescale()
+    t = ts.now()
+    print(t.utc_jpl())
 
 .. testoutput::
 
-    A.D. 2014-Jan-18 23:10:09.0000 UT
+    A.D. 2015-Oct-11 10:00:00.0000 UT
 
-But to move beyond UTC to working with actual timezones,
+To move beyond UTC to working with actual timezones,
 you will need to install
 the third-party `pytz`_ package,
 either by listing it in the dependencies of your package,
@@ -178,22 +195,22 @@ and pass the result to Skyfield:
 
     d = datetime(2014, 1, 16, 1, 32, 9)
     e = eastern.localize(d)
-    jd = JulianDate(utc=e)
+    t = ts.utc(e)
 
 And if Skyfield returns a Julian date at the end of a calculation,
 you can ask the Julian date object to build a ``datetime`` object
-for either the UTC date or your own timezone:
+for either UTC or for your own timezone:
 
 .. testcode::
 
     # UTC datetime
 
-    dt = jd.utc_datetime()
+    dt = t.utc_datetime()
     print('UTC: ' + str(dt))
 
     # Converting back to an Eastern Time datetime.
 
-    dt = jd.astimezone(eastern)
+    dt = t.astimezone(eastern)
     print('EST: ' + str(dt))
 
 .. testoutput::
@@ -206,13 +223,13 @@ As we would expect,
 is 6:32 AM local time in Greenwich, England,
 five hours to the east across the Atlantic.
 
-Note that Skyfield’s :meth:`~JulianDate.astimezone()` method
+Note that Skyfield’s :meth:`~Time.astimezone()` method
 will detect that you are using a ``pytz`` timezone
 and automatically call its ``normalize()`` method for you —
 which makes sure that daylight savings time is handled correctly —
 to spare you from having to make the call yourself.
 
-If you want a :class:`JulianDate` to hold an entire array of dates,
+If you want a :class:`Time` to hold an entire array of dates,
 as discussed below in :ref:`date-arrays`,
 then you can provide a list of ``datetime`` objects
 when building a Julian date.
@@ -241,11 +258,12 @@ The most recent leap second was in June 2012:
 
 .. testcode::
 
-    five_seconds = range(58, 58 + 5)
-    tup = (2012, 6, 30, 23, 59, five_seconds)
-    jd = JulianDate(utc=tup)
+    # Display 5 seconds around a leap second
 
-    for string in jd.utc_jpl():
+    five_seconds = [58, 59, 60, 61, 62]
+    t = ts.utc(2012, 6, 30, 23, 59, five_seconds)
+
+    for string in t.utc_jpl():
         print(string)
 
 .. testoutput::
@@ -259,8 +277,10 @@ The most recent leap second was in June 2012:
 Note that Skyfield has no problem with a calendar tuple
 that has hours, minutes, or — as in this case —
 seconds that are out of range.
-It simply adds as many seconds as we specified
-and lets the value overflow cleanly into the beginning of July.
+When we provides a range of numbers 58 through 62 as seconds,
+Skyfield smoothly added as many seconds as we specified
+to the end of June
+and let the value overflow cleanly into the beginning of July.
 
 Keep two consequences in mind when using UTC in your calculations.
 
@@ -268,12 +288,12 @@ First, expect an occasional jump or discrepancy
 if you are striding forward through time
 using the UTC minute, hour, or day.
 A graph will show a planet moving slightly farther
-during an hour that was lengthened by a leap second;
-an Earth satellite’s velocity will seem higher
-when you reach the minute that includes 61 seconds;
-and so forth.
+during an hour that was lengthened by a leap second.
+An Earth satellite’s velocity will seem higher
+when you reach the minute that includes 61 seconds.
+And so forth.
 Problems like these are the reason
-that the :class:`JulianDate` only uses UTC for input and output,
+that the :class:`Time` only uses UTC for input and output,
 and insists on keeping time internally
 using the uniform time scales discussed below in :ref:`tai-tt-tdb`.
 
@@ -294,8 +314,8 @@ because it refuses to accept seconds greater than 59:
 That is why Skyfield offers a second version
 of each method that returns a ``datetime``::
 
-    jd.utc_datetime_and_leap_second()
-    jd.astimezone_and_leap_second(tz)
+    t.utc_datetime_and_leap_second()
+    t.astimezone_and_leap_second(tz)
 
 These more accurate alternatives also return a ``leap_second``,
 which usually has the value ``0`` but jumps to ``1``
@@ -304,18 +324,20 @@ as a ``datetime`` with the incorrect time 23:59:59.
 
 .. testcode::
 
-    dt, leap_second = jd.astimezone_and_leap_second(eastern)
+    # Asking for the leap_second flag to learn the whole story
+
+    dt, leap_second = t.astimezone_and_leap_second(eastern)
 
     for dt_i, leap_second_i in zip(dt, leap_second):
-        print(str(dt_i) + ' leap_second = ' + str(leap_second_i))
+        print('{0}  leap_second = {1}'.format(dt_i, leap_second_i))
 
 .. testoutput::
 
-    2012-06-30 19:59:58-04:00 leap_second = 0
-    2012-06-30 19:59:59-04:00 leap_second = 0
-    2012-06-30 19:59:59-04:00 leap_second = 1
-    2012-06-30 20:00:00-04:00 leap_second = 0
-    2012-06-30 20:00:01-04:00 leap_second = 0
+    2012-06-30 19:59:58-04:00  leap_second = 0
+    2012-06-30 19:59:59-04:00  leap_second = 0
+    2012-06-30 19:59:59-04:00  leap_second = 1
+    2012-06-30 20:00:00-04:00  leap_second = 0
+    2012-06-30 20:00:01-04:00  leap_second = 0
 
 Using calendar tuples to represent UTC times is more elegant
 than using Python ``datetime`` objects
@@ -331,20 +353,18 @@ Date arrays
 ===========
 
 Skyfield works most efficiently
-when you build a single :class:`JulianDate` object
+when you build a single :class:`Time` object
 that holds an entire array of dates,
-instead of building many separate :class:`JulianDate` objects.
+instead of building many separate :class:`Time` objects.
 There are three techniques for building arrays.
 
-* Make ``utc=`` a list of ``datetime`` objects.
+* Provide ``ts.utc()`` with a Python list of ``datetime`` objects.
 
-* Specify ``tai=`` or ``tt=`` or ``tdb=`` or ``ut1=``
-  using an entire NumPy array or Python list of floating point values.
+* Provide ``tai()`` or ``tt()`` or ``tdb()`` or ``ut1()``
+  with an entire NumPy array or Python list of floating point values.
 
-* With any parameter,
-  use a calendar tuple with one element
-  set to a whole list or array of values
-  instead of just being a single value.
+* When specifying year, month, day, hour, minute, and second,
+  make one of the values a list or array.
 
 The last possibility is generally the one that is the most fun,
 because its lets you vary whichever time unit you want
@@ -353,15 +373,17 @@ And you are free to provide out-of-range values
 and leave it to Skyfield to work out the correct result.
 Here are some examples::
 
-    utc=(range(1900, 1950),)    # Fifty years
-    utc=(1980, range(1, 25))    # Twenty-four months
-    utc=(2005, 5, [1, 10, 20])  # 1st, 10th, 20th of May
+    ts.utc(range(1900, 1950))     # Fifty years
+    ts.utc(1980, range(1, 25))    # Twenty-four months
+    ts.utc(2005, 5, [1, 10, 20])  # 1st, 10th, and 20th of May
 
     # The ten seconds crossing the 1974 leap second
-    utc=(1975, 1, 1, 0, 0, range(-5, 5))
+    ts.utc(1975, 1, 1, 0, 0, range(-5, 5))
 
-When you provide an array :class:`JulianDate` to a Skyfield calculation,
-the resulting array will have an extra dimension
+The resulting :class:`Time` object will hold an array of times
+instead of just a single scalar value.
+When you provide it as input to a Skyfield calculation,
+the resulting array will have an extra dimension,
 expanding what would normally be a single result
 into as many results as you provided dates.
 We can compute the position of the Earth as an example:
@@ -370,8 +392,8 @@ We can compute the position of the Earth as an example:
 
     # Single Earth position
 
-    jd = JulianDate(utc=(2014, 1, 1))
-    pos = earth(jd).position.au
+    t = ts.utc(2014, 1, 1)
+    pos = earth.at(t).position.au
     print(pos)
 
 .. testoutput::
@@ -383,8 +405,8 @@ We can compute the position of the Earth as an example:
     # Whole array of Earth positions
 
     days = [1, 2, 3, 4]
-    jd = JulianDate(utc=(2014, 1, days))
-    pos = earth(jd).position.au
+    t = ts.utc(2014, 1, days)
+    pos = earth.at(t).position.au
     print(pos)
 
 .. testoutput::
@@ -423,7 +445,7 @@ being as deep as the array itself:
 .. testcode::
 
     from pprint import pprint
-    pprint(jd.utc)
+    pprint(t.utc)
 
 .. testoutput::
 
@@ -439,7 +461,7 @@ to pull a particular calendar tuple out of the larger result:
 
 .. testcode::
 
-    print(jd.utc[:,2])
+    print(t.utc[:,2])
 
 .. testoutput::
 
@@ -478,8 +500,11 @@ So twelve noon was the moment of Julian date zero:
 
 .. testcode::
 
+    # When was Julian date zero?
+
     bc_4714 = -4713
-    print(JulianDate(tt=(bc_4714, 11, 24, 12)).tt)
+    t = ts.tt(bc_4714, 11, 24, 12)
+    print(t.tt)
 
 .. testoutput::
 
@@ -501,10 +526,12 @@ so modern dates tend to be rather large numbers:
 
 .. testcode::
 
-    jd = JulianDate(utc=(2014, 1, 1))
-    print('TAI = %r' % jd.tai)
-    print('TT  = %r' % jd.tt)
-    print('TDB = %r' % jd.tdb)
+    # 2014 January 1 as a Julian Date
+
+    t = ts.utc(2014, 1, 1)
+    print('TAI = %r' % t.tai)
+    print('TT  = %r' % t.tt)
+    print('TDB = %r' % t.tdb)
 
 .. testoutput::
 
@@ -541,7 +568,7 @@ varies the rate at which our atomic clocks
 seem to run to an outside observer,
 as predicted by Einstein’s theory of General Relativity.
 So physical simulations of the Solar System tend to use TDB,
-which is continuous with the T\ :sub:`eph` time scale
+which is continuous with the *T*\ :sub:`eph` time scale
 traditionally used for Solar System and spacecraft simulations
 at the Jet Propulsion Laboratory.
 
@@ -611,23 +638,30 @@ When, then, does ΔT come into play?
   when an Earth satellite position generated from TLE elements
   gets translated into a full Solar System position.
 
-Soon, Skyfield will include a full table of historical ΔT values
-along with guidelines about using them in calculations.
-For the moment,
-if you need the above calculations to run at very high precision,
-you can look up ΔT in a table
-and provide it to your Julian date manually:
+When you create your ``ts`` timescale object
+at the beginning of your program,
+Skyfield downloads up-to-date ``deltat.data`` and ``deltat.preds`` files
+(if they are not already downloaded)
+from the United States Naval Observatory.
+These provide sub-millisecond level measurements
+of the direction that the Earth is pointing,
+allowing Skyfield to make
+
+When you ask about dates in the far future or past,
+Skyfield will run off the end of its tables
+and will instead use the formula of Morrison and Stephenson (2004)
+to estimate when day and night might have occurred in that era.
 
 .. testcode::
 
-    JulianDate(utc=(2014, 1, 1), delta_t=67.2810)
+    load.timescale(delta_t=67.2810).utc((2014, 1, 1))
 
 .. _date-cache:
 
 The Julian date object as cache
 ===============================
 
-When you create a :class:`JulianDate`
+When you create a :class:`Time`
 it goes ahead and computes its ``tt`` Terrestrial Time attribute
 starting from whatever time argument you provide.
 If you provide the ``utc`` parameter, for example,
@@ -662,7 +696,7 @@ since they are often needed repeatedly during a calculation.
 
 ``M``
     The product **NPB** that performs the complete rotation
-    between a vector in the ICRS
+    between a vector in the ICRF
     and a vector in the dynamical reference system of this Julian date,
     where **B** is the frame tie between the two systems.
 
@@ -671,7 +705,7 @@ since they are often needed repeatedly during a calculation.
     and **P**\ :sup:`T`
     that are the transposes of the three previous matrices,
     and that rotate back the other direction
-    from the dynamical reference system back to the ICRS frame.
+    from the dynamical reference system back to the ICRF frame.
 
 You will typically never have to access these matrices yourself,
 as they are used automatically by the :meth:`Position.radec()`
@@ -682,3 +716,7 @@ in the dynamical reference system.
 .. _matplotlib: http://matplotlib.org/
 .. _pytz: http://pytz.sourceforge.net/
 .. _requirements.txt: https://pip.pypa.io/en/latest/user_guide.html#requirements-files
+
+.. testcleanup::
+
+   __import__('skyfield.tests.fixes').tests.fixes.teardown()

@@ -6,9 +6,9 @@ from sgp4.io import twoline2rv
 from sgp4.propagation import sgp4
 
 from .constants import AU_KM, DAY_S, T0, tau
+from .errors import raise_error_for_deprecated_time_arguments
 from .functions import rot_x, rot_y, rot_z
 from .positionlib import Apparent, Geocentric, ITRF_to_GCRS
-from .timelib import JulianDate, takes_julian_date
 
 # important ones:
 # jdsatepoch
@@ -29,14 +29,17 @@ class EarthSatellite(object):
         sat = twoline2rv(*lines[-2:], whichconst=wgs72)
         self._sgp4_satellite = sat
         self._earth = earth
-        self.epoch = JulianDate(utc=(sat.epochyr, 1, sat.epochdays - 1.0))
+        # TODO: Drat. Where should this Timescale come from?
+        # Should they have to pass it in?
+        from skyfield import api
+        self.epoch = api.load.timescale().utc(sat.epochyr, 1, sat.epochdays)
 
     def __repr__(self):
         sat = self._sgp4_satellite
         return '<EarthSatellite number={1!r} epoch={0}>'.format(
             self.epoch.utc_iso(), sat.satnum)
 
-    def _position_and_velocity_TEME_km(self, jd):
+    def _position_and_velocity_TEME_km(self, t):
         """Return the raw true equator mean equinox (TEME) vectors from SGP4.
 
         Returns a tuple of NumPy arrays ``([x y z], [xdot ydot zdot])``
@@ -46,7 +49,7 @@ class EarthSatellite(object):
         """
         sat = self._sgp4_satellite
         epoch = sat.jdsatepoch
-        minutes_past_epoch = (jd._utc_float() - epoch) * 1440.
+        minutes_past_epoch = (t._utc_float() - epoch) * 1440.
         if getattr(minutes_past_epoch, 'shape', None):
             position = []
             velocity = []
@@ -61,40 +64,40 @@ class EarthSatellite(object):
             position, velocity = sgp4(sat, minutes_past_epoch)
             return array(position), array(velocity), sat.error_message
 
-    def _compute_GCRS(self, jd):
+    def _compute_GCRS(self, t):
         """Compute where satellite is in space on a given date."""
 
-        rTEME, vTEME, error = self._position_and_velocity_TEME_km(jd)
+        rTEME, vTEME, error = self._position_and_velocity_TEME_km(t)
         rTEME /= AU_KM
         vTEME /= AU_KM
         vTEME *= DAY_S
 
-        rITRF, vITRF = TEME_to_ITRF(jd.ut1, rTEME, vTEME)
-        rGCRS = ITRF_to_GCRS(jd, rITRF)
+        rITRF, vITRF = TEME_to_ITRF(t.ut1, rTEME, vTEME)
+        rGCRS = ITRF_to_GCRS(t, rITRF)
         vGCRS = zeros_like(rGCRS)  # todo: someday also compute vGCRS?
 
         return rGCRS, vGCRS, error
 
-    @takes_julian_date
-    def gcrs(self, jd):
+    @raise_error_for_deprecated_time_arguments
+    def gcrs(self, t):
         """Return a GCRS position for this Earth satellite.
 
         Uses standard SGP4 theory to predict the satellite location.
 
         """
-        position_au, velociy_au_per_d, error = self._compute_GCRS(jd)
-        g = Geocentric(position_au, velociy_au_per_d, jd)
+        position_au, velociy_au_per_d, error = self._compute_GCRS(t)
+        g = Geocentric(position_au, velociy_au_per_d, t)
         g.sgp4_error = error
         return g
 
     def _observe_from_bcrs(self, observer):
         # TODO: what if someone on Mars tries to look at the ISS?
 
-        jd = observer.jd
-        rGCRS, vGCRS, error = self._compute_GCRS(jd)
+        t = observer.t
+        rGCRS, vGCRS, error = self._compute_GCRS(t)
         rGCRS - observer.rGCRS
         vGCRS - observer.vGCRS
-        g = Apparent(rGCRS - observer.rGCRS, vGCRS - observer.vGCRS, jd)
+        g = Apparent(rGCRS - observer.rGCRS, vGCRS - observer.vGCRS, t)
         g.sgp4_error = error
         g.observer = observer
         # g.distance = euclidian_distance

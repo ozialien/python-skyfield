@@ -1,17 +1,20 @@
-from numpy import array, einsum, exp
+from numpy import einsum
 
-from .constants import ASEC2RAD
-from .earthlib import compute_limb_angle, refract, terra
-from .functions import from_polar, length_of, to_polar, rot_x, rot_y, rot_z
-from .chaining import Body, Segment
-from .timelib import takes_julian_date
-from .units import (Distance, Velocity, Angle, _interpret_angle,
-                    _interpret_ltude)
+from .constants import ASEC2RAD, tau
+from .earthlib import terra
+from .errors import raise_error_for_deprecated_time_arguments
+from .functions import rot_x, rot_y, rot_z
+from .jpllib import Body, Segment
+from .positionlib import Barycentric, Geocentric
+from .units import Distance, Angle, _interpret_ltude
 
 
 class Topos(Body):
-    """An object representing a specific location on the Earth's surface."""
+    """A specific location on the Earth's surface.
 
+
+
+    """
     def __init__(self, latitude=None, longitude=None, latitude_degrees=None,
                  longitude_degrees=None, elevation_m=0.0, x=0.0, y=0.0):
 
@@ -42,46 +45,40 @@ class Topos(Body):
         self.R_lat = rot_y(latitude.radians)[::-1]
         self.code = self
         self.segments = [Segment(399, self, self.compute)]
+        self.ephemeris = None
 
     def __repr__(self):
         return '<Topos {0} N, {1} E>'.format(self.latitude, self.longitude)
 
-    def compute(self, jd):
-        position, velocity = self._position_and_velocity(jd)
+    def compute(self, t):
+        position, velocity = self._position_and_velocity(t)
         return position, velocity
 
-    # @takes_julian_date
-    # def __call__(self, jd):
-    #     """Compute where this Earth location was in space on a given date."""
-    #     e = self.ephemeris.earth(jd)
-    #     tpos_au, tvel_au_per_d = self._position_and_velocity(jd)
-    #     t = Barycentric(e.position.au + tpos_au,
-    #                     e.velocity.au_per_d + tvel_au_per_d,
-    #                     jd)
-    #     t.geocentric = False  # test, then get rid of this attribute
-    #     t.rGCRS = tpos_au
-    #     t.vGCRS = tvel_au_per_d
-    #     t.topos = self
-    #     t.ephemeris = self.ephemeris
-    #     t.altaz_rotation = self._altaz_rotation(jd)
-    #     return t
+    @raise_error_for_deprecated_time_arguments
+    def at(self, t):
+        """Compute where this Earth location was in space on a given date."""
+        tpos_au, tvel_au_per_d = self._position_and_velocity(t)
+        if self.ephemeris is None:
+            c = Geocentric(tpos_au, tvel_au_per_d, t)
+        else:
+            e = self.ephemeris['earth'].at(t)
+            c = Barycentric(e.position.au + tpos_au,
+                            e.velocity.au_per_d + tvel_au_per_d,
+                            t)
+            c.geocentric = False  # test, then get rid of this attribute
+        c.rGCRS = tpos_au
+        c.vGCRS = tvel_au_per_d
+        c.topos = self
+        c.ephemeris = self.ephemeris
+        c.altaz_rotation = self._altaz_rotation(t)
+        return c
 
-    # @takes_julian_date
-    # def gcrs(self, jd):
-    #     """Compute where this location was in the GCRS on a given date."""
-    #     tpos_au, tvel_au_per_d = self._position_and_velocity(jd)
-    #     t = Geocentric(tpos_au, tvel_au_per_d, jd)
-    #     t.topos = self
-    #     t.ephemeris = self.ephemeris
-    #     t.altaz_rotation = self._altaz_rotation(jd)
-        # return t
-
-    def _position_and_velocity(self, jd):
-        """Return the GCRS position, velocity of this Topos at `jd`."""
+    def _position_and_velocity(self, t):
+        """Return the GCRS position, velocity of this Topos at `t`."""
         pos, vel = terra(self.latitude.radians, self.longitude.radians,
-                         self.elevation.au, jd.gast)
-        pos = einsum('ij...,j...->i...', jd.MT, pos)
-        vel = einsum('ij...,j...->i...', jd.MT, vel)
+                         self.elevation.au, t.gast)
+        pos = einsum('ij...,j...->i...', t.MT, pos)
+        vel = einsum('ij...,j...->i...', t.MT, vel)
         if self.x:
             R = rot_y(self.x * ASEC2RAD)
             pos = einsum('ij...,j...->i...', R, pos)
@@ -91,7 +88,7 @@ class Topos(Body):
         # TODO: also rotate velocity
         return pos, vel
 
-    def _altaz_rotation(self, jd):
-        """Compute the rotation from the ICRS into the alt-az system."""
-        R_lon = rot_z(- self.longitude.radians - jd.gast * TAU / 24.0)
-        return einsum('ij...,jk...,kl...->il...', self.R_lat, R_lon, jd.M)
+    def _altaz_rotation(self, t):
+        """Compute the rotation from the ICRF into the alt-az system."""
+        R_lon = rot_z(- self.longitude.radians - t.gast * tau / 24.0)
+        return einsum('ij...,jk...,kl...->il...', self.R_lat, R_lon, t.M)

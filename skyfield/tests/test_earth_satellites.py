@@ -3,9 +3,9 @@
 import sys
 from datetime import datetime, timedelta
 from numpy import array
-from skyfield.api import earth
+from skyfield import api
 from skyfield.sgp4lib import EarthSatellite, TEME_to_ITRF
-from skyfield.timelib import JulianDate, utc
+from skyfield.timelib import utc
 
 iss_tle = ("""\
 ISS (ZARYA)             \n\
@@ -27,6 +27,9 @@ heavens_above_transits = """\
 if sys.version_info < (3,):
     heavens_above_transits = heavens_above_transits.decode('utf-8')
 
+def ts():
+    yield api.load.timescale()
+
 def iss_transit():
     for line in heavens_above_transits.splitlines():
         fields = line.split()
@@ -40,15 +43,16 @@ def test_iss_altitude_computed_with_bcrs(iss_transit):
 
     cst = timedelta(hours=-6) #, minutes=1)
     dt = dt - cst
-    jd = JulianDate(utc=dt, delta_t=67.2091)
+    t = api.load.timescale(delta_t=67.2091).utc(dt)
 
     lines = iss_tle.splitlines()
-    s = EarthSatellite(lines, earth)
+    s = EarthSatellite(lines, None)
+    earth = api.load('de421.bsp')['earth']
     lake_zurich = earth.topos(latitude_degrees=42.2, longitude_degrees=-88.1)
 
     # Compute using Solar System coordinates:
 
-    alt, az, d = lake_zurich(jd).observe(s).altaz()
+    alt, az, d = lake_zurich.at(t).observe(s).altaz()
     print(dt, their_altitude, alt.degrees, their_altitude - alt.degrees)
     assert abs(alt.degrees - their_altitude) < 2.5  # TODO: tighten this up?
 
@@ -57,13 +61,13 @@ def test_iss_altitude_computed_with_gcrs(iss_transit):
 
     cst = timedelta(hours=-6) #, minutes=1)
     dt = dt - cst
-    jd = JulianDate(utc=dt, delta_t=67.2091)
+    t = api.load.timescale(delta_t=67.2091).utc(dt)
 
     lines = iss_tle.splitlines()
-    s = EarthSatellite(lines, earth)
-    lake_zurich = earth.topos(latitude_degrees=42.2, longitude_degrees=-88.1)
+    s = EarthSatellite(lines, None)
+    lake_zurich = api.Topos(latitude_degrees=42.2, longitude_degrees=-88.1)
 
-    alt, az, d = lake_zurich.gcrs(jd).observe(s).altaz()
+    alt, az, d = lake_zurich.at(t).observe(s).altaz()
     print(dt, their_altitude, alt.degrees, their_altitude - alt.degrees)
     assert abs(alt.degrees - their_altitude) < 2.5  # TODO: tighten this up?
 
@@ -87,7 +91,8 @@ def test_appendix_c_conversion_from_TEME_to_ITRF():
     vTEME = array([-4.746131487, 0.785818041, 5.531931288])
     vTEME = vTEME * 24.0 * 60.0 * 60.0  # km/s to km/day
 
-    jd_ut1 = JulianDate(tt=(2004, 4, 6, 7, 51, 28.386 - 0.439961)).tt
+    ts = api.load.timescale()
+    jd_ut1 = ts.tt(2004, 4, 6, 7, 51, 28.386 - 0.439961).tt
 
     xp = -0.140682 * arcsecond
     yp = 0.333309 * arcsecond
@@ -108,18 +113,19 @@ def test_appendix_c_conversion_from_TEME_to_ITRF():
 
 def test_appendix_c_satellite():
     lines = appendix_c_example.splitlines()
-    sat = EarthSatellite(lines, earth)
+    sat = EarthSatellite(lines, None)
 
+    ts = api.load.timescale()
     jd_epoch = sat._sgp4_satellite.jdsatepoch
     three_days_later = jd_epoch + 3.0
-    offset = JulianDate(tt=three_days_later)._utc_float() - three_days_later
-    jd = JulianDate(tt=three_days_later - offset)
+    offset = ts.tt(jd=three_days_later)._utc_float() - three_days_later
+    t = ts.tt(jd=three_days_later - offset)
 
     # First, a crucial sanity check (which is, technically, a test of
     # the `sgp4` package and not of Skyfield): are the right coordinates
     # being produced by our Python SGP4 propagator for this satellite?
 
-    rTEME, vTEME, error = sat._position_and_velocity_TEME_km(jd)
+    rTEME, vTEME, error = sat._position_and_velocity_TEME_km(t)
 
     assert abs(-9060.47373569 - rTEME[0]) < 1e-8
     assert abs(4658.70952502 - rTEME[1]) < 1e-8
@@ -128,3 +134,9 @@ def test_appendix_c_satellite():
     assert abs(-2.232832783 - vTEME[0]) < 1e-9
     assert abs(-4.110453490 - vTEME[1]) < 1e-9
     assert abs(-3.157345433 - vTEME[2]) < 1e-9
+
+def test_epoch_date():
+    # Example from https://celestrak.com/columns/v04n03/
+    s = appendix_c_example.replace('00179.78495062', '98001.00000000')
+    sat = EarthSatellite(s.splitlines(), None)
+    assert sat.epoch.utc_jpl() == 'A.D. 1998-Jan-01 00:00:00.0000 UT'

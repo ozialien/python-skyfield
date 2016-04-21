@@ -2,7 +2,7 @@
 
 from __future__ import print_function
 from itertools import product
-from sys import exit
+from sys import exit, stderr
 from textwrap import dedent
 
 try:
@@ -15,7 +15,7 @@ except ImportError:
 
         pip install novas novas_de405
 
-        """))
+        """), file=stderr)
     exit(2)
 
 from novas.compat import eph_manager
@@ -24,9 +24,10 @@ nutation_function = novas.nutation
 import novas.compat.nutation as nutation_module
 
 one_second = 1.0 / 24.0 / 60.0 / 60.0
-planets = [('mercury', 1), ('venus', 2), ('mars', 4), ('jupiter', 5),
-           ('saturn', 6), ('uranus', 7), ('neptune', 8), ('pluto', 9),
-           ('sun', 10), ('moon', 11)]
+planets = [('mercury', 1), ('venus', 2), ('mars', 4),
+           ('jupiter barycenter', 5), ('saturn barycenter', 6),
+           ('uranus barycenter', 7), ('neptune barycenter', 8),
+           ('pluto barycenter', 9), ('sun', 10), ('moon', 11)]
 
 def main():
     jd_start, jd_end, number = eph_manager.ephem_open()
@@ -36,27 +37,34 @@ def main():
         from numpy import abs, array, einsum, max
         from skyfield import (earthlib, framelib, nutationlib, positionlib,
                               precessionlib, starlib, timelib)
-        from skyfield.api import JulianDate
+        from skyfield.api import load
         from skyfield.constants import AU_KM, AU_M
         from skyfield.data import hipparcos
         from skyfield.functions import length_of
-        from skyfield.jpllib import Ephemeris
 
-        import de405
-        de405 = Ephemeris(de405)
-
-        OLD_AU = AU_KM / de405.jplephemeris.AU
+        OLD_AU_KM = 149597870.691  # TODO: load from de405
+        OLD_AU = AU_KM / OLD_AU_KM
 
         one_second = 1.0 / 24.0 / 60.0 / 60.0
         arcsecond = 1.0 / 60.0 / 60.0
         ra_arcsecond = 24.0 / 360.0 / 60.0 / 60.0
         meter = 1.0 / AU_M
 
+        def ts():
+            yield load.timescale()
+
         def compare(value, expected_value, epsilon):
             if hasattr(value, 'shape') or hasattr(expected_value, 'shape'):
                 assert max(abs(value - expected_value)) <= epsilon
             else:
                 assert abs(value - expected_value) <= epsilon
+
+        def de405():
+            yield load('de405.bsp')
+
+        def earth():
+            eph = load('de405.bsp')
+            yield eph[399]
 
         """)
 
@@ -92,15 +100,15 @@ def output_subroutine_tests(dates):
         angle = novas.era(jd)
         output(locals(), """\
             def test_earth_rotation_angle_date{i}():
-                compare(earthlib.earth_rotation_angle({jd!r}) * 360.0, {angle},
+                compare(earthlib.earth_rotation_angle({jd!r}) * 360.0, {angle!r},
                         0.000001 * arcsecond)
             """)
 
     for i, jd in enumerate(date_floats):
         angles = novas.e_tilt(jd)
         output(locals(), """\
-            def test_earth_tilt_date{i}():
-                compare(nutationlib.earth_tilt(JulianDate(tdb={jd!r})),
+            def test_earth_tilt_date{i}(ts):
+                compare(nutationlib.earth_tilt(ts.tdb(jd={jd!r})),
                         array({angles}), 0.00001 * arcsecond)
             """)
 
@@ -109,7 +117,7 @@ def output_subroutine_tests(dates):
         output(locals(), """\
             def test_equation_of_the_equinoxes_complimentary_terms_date{i}():
                 compare(nutationlib.equation_of_the_equinoxes_complimentary_terms({jd!r}),
-                        array({terms}), 0.0000000000000001 * arcsecond)
+                        array({terms!r}), 0.0000000000000001 * arcsecond)
             """)
 
     vector = (1.1, 1.2, 1.3)
@@ -139,7 +147,7 @@ def output_subroutine_tests(dates):
         output(locals(), """\
             def test_iau2000a_date{i}():
                 compare(nutationlib.iau2000a({jd!r}),
-                        array([{psi}, {eps}]), 0.001)
+                        array([{psi!r}, {eps!r}]), 0.001)
             """)
 
     for i, args in enumerate([
@@ -169,8 +177,8 @@ def output_subroutine_tests(dates):
         vector = [1.1, 1.2, 1.3]
         result = nutation_function(jd, vector)
         output(locals(), """\
-            def test_nutation_date{i}():
-                matrix = nutationlib.compute_nutation(JulianDate(tdb={jd!r}))
+            def test_nutation_date{i}(ts):
+                matrix = nutationlib.compute_nutation(ts.tdb(jd={jd!r}))
                 result = einsum('ij...,j...->i...', matrix, [1.1, 1.2, 1.3])
                 compare({result},
                         result, 1e-14)
@@ -192,11 +200,11 @@ def output_subroutine_tests(dates):
         result2 = novas.sidereal_time(jd, 0.0, 99.9, False, True)
         output(locals(), """\
             def test_sidereal_time_on_date{i}():
-                jd = JulianDate(tt={jd!r})
+                jd = load.timescale(delta_t=0.0).tt(jd={jd!r})
                 compare(earthlib.sidereal_time(jd), {result1!r}, 1e-13)
 
             def test_sidereal_time_with_nonzero_delta_t_on_date{i}():
-                jd = JulianDate(tt={jd!r} + 99.9 * one_second, delta_t=99.9)
+                jd = load.timescale(delta_t=99.9).tt(jd={jd!r} + 99.9 * one_second)
                 compare(earthlib.sidereal_time(jd), {result2!r}, 1e-13)
             """)
 
@@ -208,7 +216,7 @@ def output_subroutine_tests(dates):
             star = starlib.Star(ra_hours=2.530301028, dec_degrees=89.264109444,
                                 ra_mas_per_year=44.22, dec_mas_per_year=-11.75,
                                 parallax_mas=7.56, radial_km_per_s=-17.4)
-            star.au_km = de405.jplephemeris.AU
+            star.au_km = OLD_AU_KM
             star._compute_vectors()
             compare(star._position_au,
                     {p!r},
@@ -226,7 +234,7 @@ def output_subroutine_tests(dates):
         output(locals(), """\
             def test_refraction{i}():
                 r = earthlib.refraction({angle}, {temperature}, {pressure})
-                compare(r, {r}, 0.001 * arcsecond)
+                compare(r, {r!r}, 0.001 * arcsecond)
             """)
 
     northpole = novas.make_on_surface(90.0, 0.0, 0.0, 10.0, 1010.0)
@@ -245,11 +253,11 @@ def output_subroutine_tests(dates):
     for i, (tt, dec) in enumerate(product(date_floats, [56.78, -67.89])):
         alt, az = altaz_maneuver(tt, usno, ra, dec, ref=0)
         output(locals(), """\
-            def test_from_altaz_{i}():
-                jd = JulianDate(tt={tt!r})
-                usno = de405.earth.topos(
+            def test_from_altaz_{i}(earth):
+                jd = load.timescale(delta_t=0.0).tt(jd={tt!r})
+                usno = earth.topos(
                     '38.9215 N', '77.0669 W', elevation_m=92.0)
-                a = usno(jd).from_altaz(alt_degrees={alt!r}, az_degrees={az!r})
+                a = usno.at(jd).from_altaz(alt_degrees={alt!r}, az_degrees={az!r})
                 ra, dec, distance = a.radec(epoch=jd)
                 compare(ra.hours, {ra!r}, 0.000000001 * arcsecond)
                 compare(dec.degrees, {dec!r}, 0.000000001 * arcsecond)
@@ -262,7 +270,7 @@ def output_subroutine_tests(dates):
         result = novas.ter2cel(ut1, jd_low, delta_t, xp, yp, vector)
         output(locals(), """\
             def test_ITRF_to_GCRS_conversion_on_date{i}():
-                jd = JulianDate(tt={tt!r}, delta_t={delta_t!r})
+                jd = load.timescale(delta_t={delta_t!r}).tt(jd={tt!r})
                 position = positionlib.ITRF_to_GCRS(jd, {vector!r})
                 compare(position, {result!r}, 1e-13)
             """)
@@ -278,7 +286,8 @@ def output_subroutine_tests(dates):
 
 def output_geocentric_tests(dates):
     for (planet, code), (i, jd) in product(planets, enumerate(dates)):
-        obj = novas.make_object(0, code, 'planet{}'.format(code), None)
+        slug = slugify(planet)
+        obj = novas.make_object(0, code, 'planet{0}'.format(code), None)
 
         ra1, dec1, distance1 = call(novas.astro_planet, jd, obj)
         ra2, dec2, distance2 = call(novas.virtual_planet, jd, obj)
@@ -288,14 +297,15 @@ def output_geocentric_tests(dates):
 
         output(locals(), """\
 
-        def test_{planet}_geocentric_date{i}():
-            jd = JulianDate(tt={jd!r})
-            e = de405.earth(jd)
+        def test_{slug}_geocentric_date{i}(de405, ts):
+            t = ts.tt(jd={jd!r})
+            e = de405['earth'].at(t)
+            p = de405[{planet!r}]
 
-            distance = length_of((e - de405.{planet}(jd)).position.au)
+            distance = length_of((e - p.at(t)).position.au)
             compare(distance * OLD_AU, {distance1!r}, 0.5 * meter)
 
-            astrometric = e.observe(de405.{planet})
+            astrometric = e.observe(p)
             ra, dec, distance = astrometric.radec()
             compare(ra.hours, {ra1!r}, 0.001 * ra_arcsecond)
             compare(dec.degrees, {dec1!r}, 0.001 * arcsecond)
@@ -327,9 +337,8 @@ def output_geocentric_tests(dates):
 
         output(locals(), """\
 
-        def test_{name}_geocentric_date{i}():
-            jd = JulianDate(tt={jd!r})
-            e = de405.earth(jd)
+        def test_{name}_geocentric_date{i}(earth):
+            e = earth.at(load.timescale().tt(jd={jd!r}))
             star = starlib.Star(ra_hours=2.530301028, dec_degrees=89.264109444,
                                 ra_mas_per_year=44.22, dec_mas_per_year=-11.75,
                                 parallax_mas=7.56, radial_km_per_s=-17.4)
@@ -355,7 +364,8 @@ def output_topocentric_tests(dates):
     usno = novas.make_on_surface(38.9215, -77.0669, 92.0, 10.0, 1010.0)
 
     for (planet, code), (i, jd) in product(planets, enumerate(dates)):
-        obj = novas.make_object(0, code, 'planet{}'.format(code), None)
+        slug = slugify(planet)
+        obj = novas.make_object(0, code, 'planet{0}'.format(code), None)
 
         ra1, dec1, distance1 = call(novas.local_planet, jd, 0.0, obj, usno)
         ra2, dec2, distance2 = call(novas.topo_planet, jd, 0.0, obj, usno)
@@ -365,11 +375,12 @@ def output_topocentric_tests(dates):
 
         output(locals(), """\
 
-        def test_{planet}_topocentric_date{i}():
-            jd = JulianDate(tt={jd!r})
-            usno = de405.earth.topos('38.9215 N', '77.0669 W', elevation_m=92.0)
+        def test_{slug}_topocentric_date{i}(de405):
+            t = load.timescale(delta_t=0.0).tt(jd={jd!r})
+            earth = de405['earth']
+            usno = earth.topos('38.9215 N', '77.0669 W', elevation_m=92.0)
 
-            apparent = usno(jd).observe(de405.{planet}).apparent()
+            apparent = usno.at(t).observe(de405[{planet!r}]).apparent()
             ra, dec, distance = apparent.radec()
             compare(ra.hours, {ra1!r}, 0.001 * ra_arcsecond)
             compare(dec.degrees, {dec1!r}, 0.001 * arcsecond)
@@ -403,12 +414,12 @@ def output_catalog_tests(dates):
         ra, dec = call(novas.astro_star, jd, polaris)
         output(locals(), r"""
 
-        def test_hipparcos_conversion{i}():
+        def test_hipparcos_conversion{i}(earth):
             line = 'H|       11767| |02 31 47.08|+89 15 50.9| 1.97|1|H|037.94614689|+89.26413805| |   7.56|   44.22|  -11.74|  0.39|  0.45|  0.48|  0.47|  0.55|-0.16| 0.05| 0.27|-0.01| 0.08| 0.05| 0.04|-0.12|-0.09|-0.36|  1| 1.22| 11767| 2.756|0.003| 2.067|0.003| | 0.636|0.003|T|0.70|0.00|L| | 2.1077|0.0021|0.014|102| | 2.09| 2.13|   3.97|P|1|A|02319+8915|I| 1| 1| | | |  |   |       |     |     |    |S| |P|  8890|B+88    8 |          |          |0.68|F7:Ib-IIv SB|G\n'
             star = hipparcos.parse(line)
             compare(star.ra.hours, {polaris.ra!r}, 0.001 * ra_arcsecond)
             compare(star.dec.degrees, {polaris.dec!r}, 0.001 * arcsecond)
-            ra, dec, distance = de405.earth(tt={jd}).observe(star).radec()
+            ra, dec, distance = earth.at(load.timescale().tt(jd={jd})).observe(star).radec()
             compare(ra.hours, {ra!r}, 0.001 * ra_arcsecond)
             compare(dec.degrees, {dec!r}, 0.001 * arcsecond)
 
@@ -432,6 +443,11 @@ def call(function, *args):
                  for arg in args]
     answers = [function(*arglist) for arglist in zip(*argstacks)]
     return list(zip(*answers))
+
+
+def slugify(name):
+    """Turn 'jupiter_barycenter' into 'jupiter barycenter'."""
+    return name.replace(' ', '_')
 
 
 def output(dictionary, template):

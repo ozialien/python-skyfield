@@ -8,7 +8,7 @@ import sys
 from numpy import abs, array, copysign, isnan
 from .constants import AU_KM, AU_M, DAY_S, tau
 
-def _auto_convert(value):
+def _to_array(value):
     """As a convenience, turn Python lists and tuples into NumPy arrays."""
     if isinstance(value, (tuple, list)):
         return array(value)
@@ -32,12 +32,12 @@ class Distance(object):
 
     def __init__(self, au=None, km=None, m=None):
         if au is not None:
-            self.au = _auto_convert(au)
+            self.au = _to_array(au)
         elif km is not None:
-            self.km = _auto_convert(km)
+            self.km = _to_array(km)
             self.au = km / AU_KM
         elif m is not None:
-            self.m = _auto_convert(m)
+            self.m = _to_array(m)
             self.au = m / AU_M
         else:
             raise ValueError('to construct a Distance provide au, km, or m')
@@ -71,7 +71,7 @@ class Distance(object):
             'attr1': 'au', 'attr2': 'km'})
 
     def to(self, unit):
-        """Return this distance in the given AstroPy units."""
+        """Convert this distance to the given AstroPy unit."""
         from astropy.units import au
         return (self.au * au).to(unit)
 
@@ -85,7 +85,7 @@ class Velocity(object):
     _warned = False
 
     def __init__(self, au_per_d):
-        self.au_per_d = au_per_d
+        self.au_per_d = _to_array(au_per_d)
 
     def __getattr__(self, name):
         if name == 'km_per_s':
@@ -102,7 +102,12 @@ class Velocity(object):
         raise AttributeError('no attribute named %r' % (name,))
 
     def __str__(self):
-        return '%s au/day' % self.au_per_d
+        n = self.au_per_d
+        fmt = '{0} au/day' if getattr(n, 'shape', 0) else '{0:.6} au/day'
+        return fmt.format(n)
+
+    def __repr__(self):
+        return '<{0} {1}>'.format(type(self).__name__, self)
 
     def __iter__(self):
         raise UnpackingError(_iter_message % {
@@ -110,7 +115,7 @@ class Velocity(object):
             'attr1': 'au_per_d', 'attr2': 'km_per_s'})
 
     def to(self, unit):
-        """Return this velocity in the given AstroPy units."""
+        """Convert this velocity to the given AstroPy unit."""
         from astropy.units import au, d
         return (self.au_per_d * au / d).to(unit)
 
@@ -159,9 +164,10 @@ class Angle(object):
         elif hours is not None:
             self._hours = hours = _unsexagesimalize(hours)
             self.radians = hours * _from_hours
-            preference = 'hours'
 
-        self.preference = preference or 'degrees'
+        self.preference = (preference if preference is not None
+                           else 'hours' if hours is not None
+                           else 'degrees')
         self.signed = signed
 
     def __getattr__(self, name):
@@ -190,51 +196,85 @@ class Angle(object):
         return '<{0} {1}>'.format(type(self).__name__, self)
 
     def hms(self, warn=True):
+        """Convert to a tuple (hours, minutes, seconds).
+
+        All three quantities will have the same sign as the angle itself.
+
+        """
         if warn and self.preference != 'hours':
             raise WrongUnitError('hms')
         sign, units, minutes, seconds = _sexagesimalize_to_float(self._hours)
         return sign * units, sign * minutes, sign * seconds
 
     def signed_hms(self, warn=True):
+        """Convert to a tuple (sign, hours, minutes, seconds).
+
+        The ``sign`` will be either +1 or -1, and the other quantities
+        will all be positive.
+
+        """
         if warn and self.preference != 'hours':
             raise WrongUnitError('signed_hms')
         return _sexagesimalize_to_float(self._hours)
 
     def hstr(self, places=2, warn=True):
+        """Convert to a string like ``12h 07m 30.00s``."""
         if warn and self.preference != 'hours':
             raise WrongUnitError('hstr')
         hours = self._hours
-        if getattr(hours, 'shape', None):
+        if getattr(hours, 'shape', ()):
             return "{0} values from {1} to {2}".format(
-                len(degrees),
-                _hstr(min(degrees),places,signed),
-                _hstr(max(degrees),places,signed)
-            )
+                len(hours),
+                _hstr(min(hours), places),
+                _hstr(max(hours), places),
+                )
         return _hstr(hours, places)
 
     def dms(self, warn=True):
+        """Convert to a tuple (degrees, minutes, seconds).
+
+        All three quantities will have the same sign as the angle itself.
+
+        """
         if warn and self.preference != 'degrees':
             raise WrongUnitError('dms')
         sign, units, minutes, seconds = _sexagesimalize_to_float(self._degrees)
         return sign * units, sign * minutes, sign * seconds
 
     def signed_dms(self, warn=True):
+        """Convert to a tuple (degrees, hours, minutes, seconds).
+
+        The ``sign`` will be either +1 or -1, and the other quantities
+        will all be positive.
+
+        """
         if warn and self.preference != 'degrees':
             raise WrongUnitError('signed_dms')
         return _sexagesimalize_to_float(self._degrees)
 
     def dstr(self, places=1, warn=True):
+        """Convert to a string like ``181deg 52\' 30.0"``."""
         if warn and self.preference != 'degrees':
             raise WrongUnitError('dstr')
         degrees = self._degrees
         signed = self.signed
-        if getattr(degrees, 'shape', None):
+        if getattr(degrees, 'shape', ()):
             return "{0} values from {1} to {2}".format(
                 len(degrees),
-                _dstr(min(degrees),places,signed),
-                _dstr(max(degrees),places,signed)
-            )
+                _dstr(min(degrees), places, signed),
+                _dstr(max(degrees), places, signed),
+                )
         return _dstr(degrees, places, signed)
+
+    def to(self, unit):
+        """Convert this angle to the given AstroPy unit."""
+        from astropy.units import rad
+        return (self.radians * rad).to(unit)
+
+        # Or should this do:
+        from astropy.coordinates import Angle
+        from astropy.units import rad
+        return Angle(self.radians, rad).to(unit)
 
 class WrongUnitError(ValueError):
 
@@ -317,12 +357,12 @@ def _hstr(hours, places=2):
 def _dstr(degrees, places=1, signed=False):
     r"""Convert floating point `degrees` into a sexagesimal string.
 
-    >>> _dstr(12.125)
-    '12deg 07\' 30.0"'
-    >>> _dstr(12.125, places=3)
-    '12deg 07\' 30.000"'
-    >>> _dstr(12.125, signed=True)
-    '+12deg 07\' 30.0"'
+    >>> _dstr(181.875)
+    '181deg 52\' 30.0"'
+    >>> _dstr(181.875, places=3)
+    '181deg 52\' 30.000"'
+    >>> _dstr(181.875, signed=True)
+    '+181deg 52\' 30.0"'
     >>> _dstr(float('nan'))
     'nan'
 
